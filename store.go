@@ -70,6 +70,15 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_instances_enabled ON instances(enabled);
 		CREATE INDEX IF NOT EXISTS idx_instances_host ON instances(host);
 
+		-- Harness type metadata: display info for each harness type
+		CREATE TABLE IF NOT EXISTS harness_types (
+			name        TEXT PRIMARY KEY,
+			label       TEXT NOT NULL DEFAULT '',
+			emoji       TEXT NOT NULL DEFAULT '',
+			image       TEXT NOT NULL DEFAULT '',
+			updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+
 		-- Credential bindings: which credentials an instance can use, with priority
 		CREATE TABLE IF NOT EXISTS instance_credentials (
 			instance_id    TEXT NOT NULL,
