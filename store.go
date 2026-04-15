@@ -84,7 +84,6 @@ func (s *Store) migrate() error {
 			instance_id    TEXT NOT NULL,
 			credential_id  TEXT NOT NULL,
 			priority       INTEGER NOT NULL DEFAULT 0,
-			max_concurrent INTEGER NOT NULL DEFAULT 1,
 			enabled        INTEGER NOT NULL DEFAULT 1,
 			PRIMARY KEY (instance_id, credential_id),
 			FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
