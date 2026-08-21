@@ -18,6 +18,36 @@ type Store struct {
 	db *sql.DB
 }
 
+// busyTimeoutMillisecondsWanted is how long a connection waits for a lock
+// before giving up. Named so the DSN that sets it and the check that proves it
+// took effect cannot drift apart.
+const busyTimeoutMillisecondsWanted = 5000
+
+// dataSourceName builds the sqlite DSN for a database path.
+//
+// busy_timeout MUST be set here rather than with a PRAGMA statement after
+// Open: it is a per-connection setting, and *sql.DB is a pool. A one-shot
+// db.Exec("PRAGMA busy_timeout=5000") reaches only whichever connection the
+// pool happened to hand out, so every other connection keeps SQLite's default
+// of 0 and fails instantly on a lock instead of waiting. Putting it in the DSN
+// applies it to every connection the pool opens.
+//
+// _pragma=... is modernc's syntax and it is the only one that works here. The
+// mattn/go-sqlite3 spelling (_busy_timeout=5000) is silently ignored by this
+// driver — measured, 0 of 8 pooled connections saw it — as is any other
+// unrecognised key, which is why Open verifies the value after opening.
+//
+// ⚠️ foreign_keys is deliberately NOT set here. This database has live rows
+// that violate its own REFERENCES clauses (PRAGMA foreign_key_check reports an
+// orphan in runner_enrollments and one in instance_credentials), and the schema
+// carries ON DELETE CASCADE. Turning enforcement on would start refusing writes
+// that have worked for months and would arm a cascade that has never fired, so
+// it needs the orphans cleaned and a human's say-so first. Card
+// 882d977a-dfaf-47da-9857-205285dba647 holds that decision.
+func dataSourceName(dbPath string) string {
+	return fmt.Sprintf("%s?_pragma=busy_timeout(%d)", dbPath, busyTimeoutMillisecondsWanted)
+}
+
 // Open opens or creates a harness-store database. Migrations run on open.
 func Open(dbPath string) (*Store, error) {
 	dir := filepath.Dir(dbPath)
@@ -25,14 +55,29 @@ func Open(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", dataSourceName(dbPath))
 	if err != nil {
 		return nil, err
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;"); err != nil {
+	// journal_mode is the one pragma that belongs here rather than in the DSN:
+	// it is a property of the database file, so setting it once is permanent.
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("sqlite pragmas: %w", err)
+		return nil, fmt.Errorf("enable WAL: %w", err)
+	}
+
+	// An unrecognised DSN key is silently ignored by this driver, so prove the
+	// setting actually took effect instead of trusting the connection string.
+	var busyTimeoutMilliseconds int
+	if err := db.QueryRow("PRAGMA busy_timeout").Scan(&busyTimeoutMilliseconds); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("read busy_timeout pragma: %w", err)
+	}
+	if busyTimeoutMilliseconds != busyTimeoutMillisecondsWanted {
+		db.Close()
+		return nil, fmt.Errorf("busy_timeout is %d, want %d: the DSN did not take effect",
+			busyTimeoutMilliseconds, busyTimeoutMillisecondsWanted)
 	}
 
 	s := &Store{db: db}
