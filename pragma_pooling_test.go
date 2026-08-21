@@ -22,12 +22,15 @@ func readPragmaFromEveryPooledConnection(t *testing.T, db *sql.DB, pragma string
 	ctx := context.Background()
 	db.SetMaxOpenConns(connectionsHeldOpen)
 
+	// Released only after every value is collected: the connections must be
+	// held simultaneously for the read to mean anything, but holding them past
+	// the return would exhaust the pool for the next call on the same *sql.DB.
 	connections := make([]*sql.Conn, 0, connectionsHeldOpen)
-	t.Cleanup(func() {
+	defer func() {
 		for _, connection := range connections {
 			connection.Close()
 		}
-	})
+	}()
 
 	values := make([]int, 0, connectionsHeldOpen)
 	for i := 0; i < connectionsHeldOpen; i++ {
