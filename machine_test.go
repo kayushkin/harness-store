@@ -228,3 +228,33 @@ func TestGenerateRunnerTokenUnique(t *testing.T) {
 		t.Error("HashRunnerToken not deterministic")
 	}
 }
+
+func TestComputerUseIsOffUntilTheOwnerSwitchesItOnAndEditsDoNotTouchIt(t *testing.T) {
+	s := newTestStore(t)
+	m := &msg.Machine{ID: "m_cu", Name: "cu-box", Transport: msg.TransportRunner}
+	if err := s.CreateMachine(m); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMachine("m_cu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ComputerUseAllowed {
+		t.Fatal("a new machine allows computer use")
+	}
+	if err := s.SetMachineComputerUseAllowed("m_cu", true); err != nil {
+		t.Fatal(err)
+	}
+	// An edit carrying a stale false must not switch it back off.
+	got.Notes = "renamed"
+	got.ComputerUseAllowed = false
+	if err := s.UpdateMachine(got); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := s.GetMachine("m_cu"); !after.ComputerUseAllowed || after.Notes != "renamed" {
+		t.Errorf("after an edit: allowed=%v notes=%q; want true, renamed", after.ComputerUseAllowed, after.Notes)
+	}
+	if err := s.SetMachineComputerUseAllowed("m_missing", true); err == nil {
+		t.Error("switching a machine that does not exist succeeded")
+	}
+}

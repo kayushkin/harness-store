@@ -7,14 +7,14 @@ import (
 	"github.com/kayushkin/llm-bridge/msg"
 )
 
-const machineRowCols = `id, name, emoji, hostname, os, arch, transport, ssh_user, ssh_key_path, ssh_port, default_working_dir, user, notes, last_seen_at, created_at, updated_at`
+const machineRowCols = `id, name, emoji, hostname, os, arch, transport, ssh_user, ssh_key_path, ssh_port, default_working_dir, user, notes, computer_use_allowed, last_seen_at, created_at, updated_at`
 
 func scanMachine(row interface{ Scan(dest ...any) error }) (*msg.Machine, error) {
 	var m msg.Machine
 	var lastSeen sql.NullTime
 	if err := row.Scan(&m.ID, &m.Name, &m.Emoji, &m.Hostname, &m.OS, &m.Arch, &m.Transport,
 		&m.SSHUser, &m.SSHKeyPath, &m.SSHPort, &m.DefaultWorkingDir, &m.User, &m.Notes,
-		&lastSeen, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		&m.ComputerUseAllowed, &lastSeen, &m.CreatedAt, &m.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if lastSeen.Valid {
@@ -87,6 +87,22 @@ func (s *Store) UpdateMachine(m *msg.Machine) error {
 		m.SSHUser, m.SSHKeyPath, m.SSHPort, m.DefaultWorkingDir, m.User, m.Notes,
 		m.UpdatedAt, m.ID,
 	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// SetMachineComputerUseAllowed sets the owner's computer-use switch. It has
+// its own setter, outside UpdateMachine, so an edit of a machine's other
+// fields can never turn computer use on or off by carrying a stale value.
+func (s *Store) SetMachineComputerUseAllowed(id string, allowed bool) error {
+	res, err := s.db.Exec(`UPDATE machines SET computer_use_allowed=?, updated_at=? WHERE id=?`,
+		allowed, time.Now().UTC(), id)
 	if err != nil {
 		return err
 	}

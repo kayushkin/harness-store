@@ -142,6 +142,18 @@ func (s *Store) migrate() error {
 		}
 	}
 
+	// Additive: machines.computer_use_allowed, the owner's switch for handing
+	// a runner's computer-use tool to sessions; off for every existing machine.
+	hasComputerUseAllowed, err := columnExists(s.db, "machines", "computer_use_allowed")
+	if err != nil {
+		return fmt.Errorf("check machines.computer_use_allowed: %w", err)
+	}
+	if !hasComputerUseAllowed {
+		if _, err := s.db.Exec(`ALTER TABLE machines ADD COLUMN computer_use_allowed INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add machines.computer_use_allowed: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -170,6 +182,7 @@ CREATE TABLE IF NOT EXISTS machines (
     default_working_dir      TEXT NOT NULL DEFAULT '',
     user                     TEXT NOT NULL DEFAULT '',
     notes                    TEXT NOT NULL DEFAULT '',
+    computer_use_allowed     INTEGER NOT NULL DEFAULT 0,
     runner_token_hash        TEXT NOT NULL DEFAULT '',
     last_seen_at             DATETIME,
     created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
